@@ -368,22 +368,26 @@ app.patch('/products/:id', upload.fields([
 
     if (prodError) throw prodError
 
-    // --- 2. მონიშნული დამატებითი ფოტოების წაშლა ---
-    if (productData.delete_images) {
-      const urlsToDelete = JSON.parse(productData.delete_images)
-      
-      if (Array.isArray(urlsToDelete) && urlsToDelete.length > 0) {
-        for (const url of urlsToDelete) {
-          // ვიღებთ ფაილის სახელს URL-ის ბოლოდან
-          const fileName = url.split('/').pop().split('?')[0];
-          
-          // 1. ვშლით Storage-დან
-          const { error: stErr } = await supabase.storage.from('products').remove([`products/${fileName}`])
-          if (stErr) console.error('Storage Delete Error:', stErr)
+if (productData.delete_images) {
+      try {
+        // ვამოწმებთ, საერთოდ არის თუ არა მონაცემი გამოგზავნილი
+        const urlsToDelete = typeof productData.delete_images === 'string' 
+          ? JSON.parse(productData.delete_images) 
+          : productData.delete_images;
 
-          // 2. ვშლით ბაზიდან (product_images ცხრილიდან)
-          await supabase.from('product_images').delete().eq('image_url', url)
+        if (Array.isArray(urlsToDelete) && urlsToDelete.length > 0) {
+          for (const url of urlsToDelete) {
+            const path = getPathFromUrl(url);
+            if (path) {
+              await supabase.storage.from('products').remove([path]);
+            }
+            // აუცილებლად წავშალოთ ჩანაწერი ბაზიდანაც
+            await supabase.from('product_images').delete().eq('image_url', url);
+          }
         }
+      } catch (parseErr) {
+        console.error('Error parsing delete_images:', parseErr);
+        // არ გვინდა სერვერი გაჩერდეს, უბრალოდ გავაგრძელოთ
       }
     }
 
