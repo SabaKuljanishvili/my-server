@@ -377,7 +377,13 @@ if (productData.delete_images) {
 
         if (Array.isArray(urlsToDelete) && urlsToDelete.length > 0) {
           for (const url of urlsToDelete) {
-            const path = getPathFromUrl(url);
+            // const path = getPathFromUrl(url);
+            const getPathFromUrl = (url) => {
+  if (!url || typeof url !== 'string' || !url.includes('/products/')) return null;
+  const parts = url.split('/products/');
+  const fileName = parts[1].split('?')[0];
+  return `products/${fileName}`;
+};
             if (path) {
               await supabase.storage.from('products').remove([path]);
             }
