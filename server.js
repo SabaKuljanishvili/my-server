@@ -239,6 +239,38 @@ app.patch('/products/:id', upload.fields([
 
     if (prodError) throw prodError
 
+    // 3. Handle Deleting Existing Images
+    if (productData.delete_images) {
+      try {
+        const urlsToDelete = Array.isArray(productData.delete_images)
+          ? productData.delete_images
+          : JSON.parse(productData.delete_images)
+
+        if (Array.isArray(urlsToDelete) && urlsToDelete.length > 0) {
+          // Delete files from Supabase storage (if they exist)
+          for (const url of urlsToDelete) {
+            // აქ ვიღებთ path-ს publicUrl-დან
+            const path = url.split('/products/')[1]
+            if (path) {
+              const { error: storageErr } = await supabase.storage.from('products').remove([`products/${path}`])
+              if (storageErr) console.error('Error deleting from storage:', storageErr)
+            }
+          }
+
+          // Delete records from product_images table
+          const { error: delErr } = await supabase
+            .from('product_images')
+            .delete()
+            .eq('product_id', productId)
+            .in('image_url', urlsToDelete)
+
+          if (delErr) console.error('Supabase delete error:', delErr)
+        }
+      } catch (e) {
+        console.error('Error deleting images:', e)
+      }
+    }
+
     if (req.files['extra_images']) {
       for (const file of req.files['extra_images']) {
         const path = `products/${Date.now()}-${file.originalname}`
@@ -263,13 +295,23 @@ app.patch('/products/:id', upload.fields([
 
 // Delete Product
 app.delete('/products/:id', async (req, res) => {
-  const { error } = await supabase
-    .from('products')
-    .delete()
-    .eq('id', req.params.id)
+  const productId = req.params.id
+  try {
+    // 1. Delete associated records first (if no DB-level cascade)
+    await supabase.from('product_images').delete().eq('product_id', productId)
 
-  if (error) return res.status(400).json({ error: error.message })
-  res.json({ message: 'Deleted successfully' })
+    // 2. Delete the product
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', productId)
+
+    if (error) throw error
+    res.json({ message: 'Deleted successfully' })
+  } catch (error) {
+    console.error('Delete product error:', error)
+    res.status(400).json({ error: error.message })
+  }
 })
 
 // ================= CATEGORIES =================
@@ -308,7 +350,11 @@ app.delete('/categories/:id', async (req, res) => {
 
 // ================= SERVER =================
 
-const PORT = 3000
+// Use env PORT, fallback to 3000 for local development only
+const PORT = process.env.PORT || 3000   // 3000 არის fallback მხოლოდ ლოკალისთვის
+const PUBLIC_URL = process.env.PUBLIC_URL || 'https://my-server-1-h2hb.onrender.com'
+
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`)
+  console.log(`Server listening on port ${PORT}`)
+  console.log(`Public URL (if hosted): ${PUBLIC_URL}`)
 })
