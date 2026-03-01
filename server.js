@@ -207,6 +207,12 @@ app.patch('/products/:id', upload.fields([
 ]), async (req, res) => {
   try {
     const productId = req.params.id
+    // Fetch existing product to know current main_image
+    const { data: existingProduct } = await supabase
+      .from('products')
+      .select('main_image')
+      .eq('id', productId)
+      .single()
     const productData = req.body
     let updateData = {
       title: productData.title,
@@ -223,11 +229,25 @@ app.patch('/products/:id', upload.fields([
       const file = req.files['main_image'][0]
       const path = `products/${Date.now()}-${file.originalname}`
       const { error } = await supabase.storage.from('products').upload(path, file.buffer, {
-        contentType: file.mimetype
+        contentType: fil0e.mimetype
       })
       if (error) throw error
       const { data: { publicUrl } } = supabase.storage.from('products').getPublicUrl(path)
       updateData.main_image = publicUrl
+
+      // After successful upload, remove the old main image from storage (if present and different)
+      try {
+        const oldUrl = existingProduct && existingProduct.main_image
+        if (oldUrl && oldUrl !== publicUrl && oldUrl.includes('/products/')) {
+          const oldPath = oldUrl.split('/products/')[1]
+          if (oldPath) {
+            const { error: storageDelErr } = await supabase.storage.from('products').remove([`products/${oldPath}`])
+            if (storageDelErr) console.error('Error deleting old main image from storage:', storageDelErr)
+          }
+        }
+      } catch (e) {
+        console.error('Failed to delete old main image:', e)
+      }
     }
 
     const { data: updatedProduct, error: prodError } = await supabase
@@ -297,10 +317,46 @@ app.patch('/products/:id', upload.fields([
 app.delete('/products/:id', async (req, res) => {
   const productId = req.params.id
   try {
-    // 1. Delete associated records first (if no DB-level cascade)
-    await supabase.from('product_images').delete().eq('product_id', productId)
+    // 1. Fetch associated image URLs so we can remove files from storage
+    const { data: images } = await supabase
+      .from('product_images')
+      .select('image_url')
+      .eq('product_id', productId)
 
-    // 2. Delete the product
+    const { data: product } = await supabase
+      .from('products')
+      .select('main_image')
+      .eq('id', productId)
+      .single()
+
+    // 2. Remove files from storage for extra images
+    if (images && images.length > 0) {
+      for (const row of images) {
+        const url = row.image_url
+        if (url && url.includes('/products/')) {
+          const path = url.split('/products/')[1]
+          if (path) {
+            const { error: storageErr } = await supabase.storage.from('products').remove([`products/${path}`])
+            if (storageErr) console.error('Error deleting from storage:', storageErr)
+          }
+        }
+      }
+    }
+
+    // 3. Remove main image from storage
+    if (product && product.main_image && product.main_image.includes('/products/')) {
+      const mainPath = product.main_image.split('/products/')[1]
+      if (mainPath) {
+        const { error: mainDelErr } = await supabase.storage.from('products').remove([`products/${mainPath}`])
+        if (mainDelErr) console.error('Error deleting main image from storage:', mainDelErr)
+      }
+    }
+
+    // 4. Delete associated product_images records
+    const { error: delImagesErr } = await supabase.from('product_images').delete().eq('product_id', productId)
+    if (delImagesErr) console.error('Error deleting product_images rows:', delImagesErr)
+
+    // 5. Delete the product
     const { error } = await supabase
       .from('products')
       .delete()
