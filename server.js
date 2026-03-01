@@ -201,131 +201,18 @@ app.post('/products', upload.fields([
 })
 
 // Patch Product
-// app.patch('/products/:id', upload.fields([
-//   { name: 'main_image', maxCount: 1 },
-//   { name: 'extra_images', maxCount: 10 }
-// ]), async (req, res) => {
-//   try {
-//     const productId = req.params.id
-//     // Fetch existing product to know current main_image
-//     const { data: existingProduct } = await supabase
-//       .from('products')
-//       .select('main_image')
-//       .eq('id', productId)
-//       .single()
-//     const productData = req.body
-//     let updateData = {
-//       title: productData.title,
-//       short_description: productData.short_description,
-//       large_description: productData.large_description,
-//       price: parseFloat(productData.price),
-//       discount_price: productData.discount_price ? parseFloat(productData.discount_price) : null,
-//       category_id: productData.category_id,
-//       discount_start: productData.discount_start || null,
-//       discount_end: productData.discount_end || null,
-//     }
-
-//     if (req.files['main_image']) {
-//       const file = req.files['main_image'][0]
-//       const path = `products/${Date.now()}-${file.originalname}`
-//       const { error } = await supabase.storage.from('products').upload(path, file.buffer, {
-//         contentType: fil0e.mimetype
-//       })
-//       if (error) throw error
-//       const { data: { publicUrl } } = supabase.storage.from('products').getPublicUrl(path)
-//       updateData.main_image = publicUrl
-
-//       // After successful upload, remove the old main image from storage (if present and different)
-//       try {
-//         const oldUrl = existingProduct && existingProduct.main_image
-//         if (oldUrl && oldUrl !== publicUrl && oldUrl.includes('/products/')) {
-//           const oldPath = oldUrl.split('/products/')[1]
-//           if (oldPath) {
-//             const { error: storageDelErr } = await supabase.storage.from('products').remove([`products/${oldPath}`])
-//             if (storageDelErr) console.error('Error deleting old main image from storage:', storageDelErr)
-//           }
-//         }
-//       } catch (e) {
-//         console.error('Failed to delete old main image:', e)
-//       }
-//     }
-
-//     const { data: updatedProduct, error: prodError } = await supabase
-//       .from('products')
-//       .update(updateData)
-//       .eq('id', productId)
-//       .select()
-//       .single()
-
-//     if (prodError) throw prodError
-
-//     // 3. Handle Deleting Existing Images
-//     if (productData.delete_images) {
-//       try {
-//         const urlsToDelete = Array.isArray(productData.delete_images)
-//           ? productData.delete_images
-//           : JSON.parse(productData.delete_images)
-
-//         if (Array.isArray(urlsToDelete) && urlsToDelete.length > 0) {
-//           // Delete files from Supabase storage (if they exist)
-//           for (const url of urlsToDelete) {
-//             // აქ ვიღებთ path-ს publicUrl-დან
-//             const path = url.split('/products/')[1]
-//             if (path) {
-//               const { error: storageErr } = await supabase.storage.from('products').remove([`products/${path}`])
-//               if (storageErr) console.error('Error deleting from storage:', storageErr)
-//             }
-//           }
-
-//           // Delete records from product_images table
-//           const { error: delErr } = await supabase
-//             .from('product_images')
-//             .delete()
-//             .eq('product_id', productId)
-//             .in('image_url', urlsToDelete)
-
-//           if (delErr) console.error('Supabase delete error:', delErr)
-//         }
-//       } catch (e) {
-//         console.error('Error deleting images:', e)
-//       }
-//     }
-
-//     if (req.files['extra_images']) {
-//       for (const file of req.files['extra_images']) {
-//         const path = `products/${Date.now()}-${file.originalname}`
-//         const { error: uploadError } = await supabase.storage.from('products').upload(path, file.buffer, {
-//           contentType: file.mimetype
-//         })
-//         if (!uploadError) {
-//           const { data: { publicUrl } } = supabase.storage.from('products').getPublicUrl(path)
-//           await supabase.from('product_images').insert([{
-//             product_id: productId,
-//             image_url: publicUrl
-//           }])
-//         }
-//       }
-//     }
-
-//     res.json(updatedProduct)
-//   } catch (err) {
-//     res.status(500).json({ error: err.message })
-//   }
-// })
-
-
 app.patch('/products/:id', upload.fields([
   { name: 'main_image', maxCount: 1 },
   { name: 'extra_images', maxCount: 10 }
 ]), async (req, res) => {
   try {
     const productId = req.params.id
+    // Fetch existing product to know current main_image
     const { data: existingProduct } = await supabase
       .from('products')
       .select('main_image')
       .eq('id', productId)
       .single()
-
     const productData = req.body
     let updateData = {
       title: productData.title,
@@ -338,27 +225,31 @@ app.patch('/products/:id', upload.fields([
       discount_end: productData.discount_end || null,
     }
 
-    // --- 1. მთავარი ფოტოს განახლება ---
     if (req.files['main_image']) {
       const file = req.files['main_image'][0]
       const path = `products/${Date.now()}-${file.originalname}`
-      
-      const { error: uploadErr } = await supabase.storage.from('products').upload(path, file.buffer, {
-        contentType: file.mimetype
+      const { error } = await supabase.storage.from('products').upload(path, file.buffer, {
+        contentType: fil0e.mimetype
       })
-      if (uploadErr) throw uploadErr
-
+      if (error) throw error
       const { data: { publicUrl } } = supabase.storage.from('products').getPublicUrl(path)
       updateData.main_image = publicUrl
 
-      // ძველი მთავარი ფოტოს წაშლა
-      if (existingProduct?.main_image) {
-        const oldPath = existingProduct.main_image.split('/').pop().split('?')[0];
-        await supabase.storage.from('products').remove([`products/${oldPath}`])
+      // After successful upload, remove the old main image from storage (if present and different)
+      try {
+        const oldUrl = existingProduct && existingProduct.main_image
+        if (oldUrl && oldUrl !== publicUrl && oldUrl.includes('/products/')) {
+          const oldPath = oldUrl.split('/products/')[1]
+          if (oldPath) {
+            const { error: storageDelErr } = await supabase.storage.from('products').remove([`products/${oldPath}`])
+            if (storageDelErr) console.error('Error deleting old main image from storage:', storageDelErr)
+          }
+        }
+      } catch (e) {
+        console.error('Failed to delete old main image:', e)
       }
     }
 
-    // მონაცემთა ბაზის განახლება
     const { data: updatedProduct, error: prodError } = await supabase
       .from('products')
       .update(updateData)
@@ -368,43 +259,44 @@ app.patch('/products/:id', upload.fields([
 
     if (prodError) throw prodError
 
-if (productData.delete_images) {
+    // 3. Handle Deleting Existing Images
+    if (productData.delete_images) {
       try {
-        // ვამოწმებთ, საერთოდ არის თუ არა მონაცემი გამოგზავნილი
-        const urlsToDelete = typeof productData.delete_images === 'string' 
-          ? JSON.parse(productData.delete_images) 
-          : productData.delete_images;
+        const urlsToDelete = Array.isArray(productData.delete_images)
+          ? productData.delete_images
+          : JSON.parse(productData.delete_images)
 
         if (Array.isArray(urlsToDelete) && urlsToDelete.length > 0) {
+          // Delete files from Supabase storage (if they exist)
           for (const url of urlsToDelete) {
-            // const path = getPathFromUrl(url);
-            const getPathFromUrl = (url) => {
-  if (!url || typeof url !== 'string' || !url.includes('/products/')) return null;
-  const parts = url.split('/products/');
-  const fileName = parts[1].split('?')[0];
-  return `products/${fileName}`;
-};
+            // აქ ვიღებთ path-ს publicUrl-დან
+            const path = url.split('/products/')[1]
             if (path) {
-              await supabase.storage.from('products').remove([path]);
+              const { error: storageErr } = await supabase.storage.from('products').remove([`products/${path}`])
+              if (storageErr) console.error('Error deleting from storage:', storageErr)
             }
-            // აუცილებლად წავშალოთ ჩანაწერი ბაზიდანაც
-            await supabase.from('product_images').delete().eq('image_url', url);
           }
+
+          // Delete records from product_images table
+          const { error: delErr } = await supabase
+            .from('product_images')
+            .delete()
+            .eq('product_id', productId)
+            .in('image_url', urlsToDelete)
+
+          if (delErr) console.error('Supabase delete error:', delErr)
         }
-      } catch (parseErr) {
-        console.error('Error parsing delete_images:', parseErr);
-        // არ გვინდა სერვერი გაჩერდეს, უბრალოდ გავაგრძელოთ
+      } catch (e) {
+        console.error('Error deleting images:', e)
       }
     }
 
-    // --- 3. ახალი დამატებითი ფოტოების ატვირთვა ---
     if (req.files['extra_images']) {
       for (const file of req.files['extra_images']) {
         const path = `products/${Date.now()}-${file.originalname}`
         const { error: uploadError } = await supabase.storage.from('products').upload(path, file.buffer, {
           contentType: file.mimetype
         })
-        
         if (!uploadError) {
           const { data: { publicUrl } } = supabase.storage.from('products').getPublicUrl(path)
           await supabase.from('product_images').insert([{
@@ -417,7 +309,6 @@ if (productData.delete_images) {
 
     res.json(updatedProduct)
   } catch (err) {
-    console.error(err)
     res.status(500).json({ error: err.message })
   }
 })
